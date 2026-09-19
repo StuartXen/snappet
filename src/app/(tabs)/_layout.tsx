@@ -23,6 +23,7 @@ export default function TabLayout() {
         headerTintColor: theme.text,
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.textSecondary,
+        tabBarActiveBackgroundColor: 'transparent',
         tabBarStyle: {
           backgroundColor: theme.backgroundElement,
           borderTopColor: theme.line,

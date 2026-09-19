@@ -225,8 +225,11 @@ function PhotoBlock({
     );
   }
 
+  const glyph = speciesLabel.startsWith('Dog') ? '🐶' : speciesLabel.startsWith('Cat') ? '🐱' : '🐾';
+
   return (
     <View style={[styles.photo, styles.demoPhoto, { backgroundColor: theme.backgroundSelected }]}>
+      <ThemedText type="hero">{glyph}</ThemedText>
       <ThemedText type="subtitle">{speciesLabel} sample</ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
         {demoKey}
