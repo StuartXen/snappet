@@ -1,6 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -22,7 +23,7 @@ function formatWhen(iso: string): string {
 export default function HistoryScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [items, setItems] = useState<HistoryItem[] | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -45,50 +46,57 @@ export default function HistoryScreen() {
 
   return (
     <ThemedView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {items.length === 0 ? (
-          <View style={styles.empty}>
-            <ThemedText type="title">No snaps yet</ThemedText>
-            <ThemedText themeColor="textSecondary">
-              Take a photo. We’ll read the face from there.
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+        <ThemedText type="largeTitle">Recents</ThemedText>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {items == null ? (
+            <ThemedText type="footnote" themeColor="textSecondary" style={styles.pad}>
+              Loading…
             </ThemedText>
-          </View>
-        ) : (
-          items.map((item, index) => (
-            <Pressable
-              key={item.id}
-              onPress={() => router.push({ pathname: '/result', params: { id: item.id } })}
-              accessibilityRole="button"
-              style={[
-                styles.row,
-                {
-                  borderBottomColor: theme.line,
-                  borderBottomWidth: index === items.length - 1 ? 0 : StyleSheet.hairlineWidth,
-                },
-              ]}>
-              <View style={styles.meta}>
-                <ThemedText type="body">
-                  {item.result.speciesLabel} · {item.result.mood.label}
-                </ThemedText>
+          ) : items.length === 0 ? (
+            <View style={styles.empty}>
+              <ThemedText type="title2">No snaps yet</ThemedText>
+              <ThemedText themeColor="textSecondary">
+                Take a photo. We’ll read the face from there.
+              </ThemedText>
+            </View>
+          ) : (
+            items.map((item, index) => (
+              <Pressable
+                key={item.id}
+                onPress={() => router.push({ pathname: '/result', params: { id: item.id } })}
+                accessibilityRole="button"
+                style={[
+                  styles.row,
+                  {
+                    borderBottomColor: theme.line,
+                    borderBottomWidth: index === items.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                  },
+                ]}>
+                <View style={styles.meta}>
+                  <ThemedText type="body">
+                    {item.result.speciesLabel} · {item.result.mood.label}
+                  </ThemedText>
+                  <ThemedText type="footnote" themeColor="textSecondary">
+                    {formatWhen(item.createdAt)}
+                  </ThemedText>
+                </View>
                 <ThemedText type="footnote" themeColor="textSecondary">
-                  {formatWhen(item.createdAt)}
+                  {item.result.comfort.level === 'high' ? 'High cues' : '›'}
                 </ThemedText>
-              </View>
-              <ThemedText type="footnote" themeColor="textSecondary">
-                {item.result.comfort.level === 'high' ? 'High cues' : '›'}
+              </Pressable>
+            ))
+          )}
+
+          {items != null && items.length > 0 ? (
+            <Pressable onPress={confirmClear} accessibilityRole="button" style={styles.clear}>
+              <ThemedText type="body" themeColor="accent">
+                Clear Recents
               </ThemedText>
             </Pressable>
-          ))
-        )}
-
-        {items.length > 0 ? (
-          <Pressable onPress={confirmClear} accessibilityRole="button" style={styles.clear}>
-            <ThemedText type="body" themeColor="accent">
-              Clear Recents
-            </ThemedText>
-          </Pressable>
-        ) : null}
-      </ScrollView>
+          ) : null}
+        </ScrollView>
+      </SafeAreaView>
     </ThemedView>
   );
 }
@@ -97,15 +105,22 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  content: {
-    paddingHorizontal: Spacing.four,
-    paddingBottom: Spacing.six,
+  safe: {
+    flex: 1,
+    alignSelf: 'center',
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  content: {
+    paddingBottom: Spacing.six,
+  },
+  pad: {
+    paddingTop: Spacing.four,
   },
   empty: {
-    paddingTop: Spacing.six,
+    paddingTop: Spacing.five,
     gap: Spacing.two,
   },
   row: {

@@ -42,6 +42,7 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'Recents',
+          headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon glyph="🕐" focused={focused} />,
         }}
       />
