@@ -1,15 +1,29 @@
 import { extractCloudObservations, isCloudVisionConfigured } from './cloudVision';
 import { extractDemoObservations } from './demoExtractor';
 import { buildAnalysisResult } from './scoring';
-import type { AnalysisMode, AnalysisResult, AnalyzeInput } from './types';
+import { detectSpecies } from './species';
+import type { AnalysisMode, AnalysisResult, AnalyzeInput, SpeciesGuess } from './types';
+
+function guessFromInput(input: AnalyzeInput): SpeciesGuess {
+  if (input.species) {
+    return {
+      species: input.species,
+      confidence: input.speciesConfidence ?? 0.95,
+      evidence: 'Species supplied by the caller (tests or an override).',
+      source: 'override',
+    };
+  }
+  return detectSpecies(input.imageKey);
+}
 
 export function analyzePetSync(input: AnalyzeInput): AnalysisResult {
   const analysisMode: AnalysisMode = input.analysisMode ?? 'demo';
-  const observations = input.observations ?? extractDemoObservations(input.imageKey, input.species);
+  const guess = guessFromInput(input);
+  const observations = input.observations ?? extractDemoObservations(input.imageKey, guess.species);
 
   return buildAnalysisResult({
     imageKey: input.imageKey,
-    species: input.species,
+    guess,
     observations,
     analysisMode,
   });
@@ -25,13 +39,14 @@ export async function analyzePet(
   if (isCloudVisionConfigured()) {
     const cloud = await extractCloudObservations({
       imageKey: input.imageKey,
-      species: input.species,
       imageUri: input.imageUri,
     });
     if (cloud) {
       return analyzePetSync({
         ...input,
-        observations: cloud,
+        species: cloud.species ?? input.species,
+        speciesConfidence: cloud.speciesConfidence ?? input.speciesConfidence,
+        observations: cloud.features,
         analysisMode: 'cloud',
       });
     }
@@ -41,28 +56,8 @@ export async function analyzePet(
 }
 
 export const SAMPLE_SNAPS = [
-  {
-    imageKey: 'demo://cat-relaxed',
-    species: 'cat' as const,
-    title: 'Relaxed cat',
-    blurb: 'Soft face — low grimace cues',
-  },
-  {
-    imageKey: 'demo://cat-uncomfortable',
-    species: 'cat' as const,
-    title: 'Uncomfortable cat',
-    blurb: 'Tight face — higher FGS cues',
-  },
-  {
-    imageKey: 'demo://dog-alert',
-    species: 'dog' as const,
-    title: 'Alert dog',
-    blurb: 'Awake, not a pain face',
-  },
-  {
-    imageKey: 'demo://dog-pain',
-    species: 'dog' as const,
-    title: 'Discomfort-cue dog',
-    blurb: 'Higher dog facial-discomfort cues',
-  },
+  { imageKey: 'demo://cat-relaxed', title: 'Sunbeam', glyph: '🐱' },
+  { imageKey: 'demo://cat-uncomfortable', title: 'Tucked in', glyph: '🐱' },
+  { imageKey: 'demo://dog-alert', title: 'Ready', glyph: '🐶' },
+  { imageKey: 'demo://dog-pain', title: 'Low key', glyph: '🐶' },
 ];

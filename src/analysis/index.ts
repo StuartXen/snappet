@@ -6,10 +6,15 @@ export {
   COMFORT_HIGH_THRESHOLD,
   COMFORT_MEDIUM_THRESHOLD,
   comfortLevelFromIndex,
+  estimateSignals,
+  funnyCaption,
+  signalValue,
   weightedDiscomfortIndex,
 } from './scoring';
+export { detectSpecies } from './species';
 export type {
   AnalysisResult,
+  BiometricSignal,
   ComfortLevel,
   FeatureObservation,
   FeatureScore,

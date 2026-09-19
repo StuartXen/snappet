@@ -1,13 +1,12 @@
-import { Image } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { analyzePet } from '@/analysis';
-import { Card } from '@/components/card';
-import { ComfortMeter } from '@/components/comfort-meter';
-import { DisclaimerBanner } from '@/components/disclaimer-banner';
-import { FeatureBar } from '@/components/feature-bar';
+import type { AnalysisResult } from '@/analysis/types';
+import { PhotoHero } from '@/components/photo-hero';
+import { SignalRow } from '@/components/signal-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Palette, Radius, Spacing } from '@/constants/theme';
@@ -15,49 +14,71 @@ import { useTheme } from '@/hooks/use-theme';
 import { getHistoryItem, saveHistoryItem, type HistoryItem } from '@/storage/history';
 import { takePendingSnap } from '@/storage/session';
 
+const PAGES = ['species', 'vibe', 'signals', 'caption'] as const;
+const ANALYZE_HOLD_MS = 900;
+
 export default function ResultScreen() {
+  const router = useRouter();
   const theme = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const pageWidth = Math.min(windowWidth, MaxContentWidth);
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [item, setItem] = useState<HistoryItem | null>(null);
+  const [preview, setPreview] = useState({ uri: '', key: '' });
   const [error, setError] = useState<string | null>(null);
-  const [showCitations, setShowCitations] = useState(false);
+  const [page, setPage] = useState(0);
+  const [analyzing, setAnalyzing] = useState(!id);
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
+      const started = Date.now();
       try {
         if (id) {
           const stored = await getHistoryItem(id);
           if (!stored) {
-            setError('That snap is no longer in local history.');
+            setError('That snap is gone.');
+            setAnalyzing(false);
             return;
           }
-          if (!cancelled) setItem(stored);
+          if (!cancelled) {
+            setItem(stored);
+            setPreview({ uri: stored.imageUri, key: stored.imageKey });
+            setAnalyzing(false);
+          }
           return;
         }
 
         const pending = takePendingSnap();
         if (!pending) {
-          setError('Nothing to analyze. Take or pick a photo first.');
+          setError('Nothing to read. Take a snap first.');
+          setAnalyzing(false);
           return;
         }
 
+        if (!cancelled) setPreview({ uri: pending.imageUri, key: pending.imageKey });
+
         const result = await analyzePet({
           imageKey: pending.imageKey,
-          species: pending.species,
           imageUri: pending.imageUri,
         });
         const saved = await saveHistoryItem({
           imageUri: pending.imageUri,
           imageKey: pending.imageKey,
-          species: pending.species,
+          species: result.species,
           result,
         });
-        if (!cancelled) setItem(saved);
+        const wait = Math.max(0, ANALYZE_HOLD_MS - (Date.now() - started));
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (!cancelled) {
+          setItem(saved);
+          setAnalyzing(false);
+        }
       } catch (cause) {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : 'Analysis failed.');
+          setAnalyzing(false);
+          setError(cause instanceof Error ? cause.message : 'Could not read that snap.');
         }
       }
     }
@@ -68,172 +89,193 @@ export default function ResultScreen() {
     };
   }, [id]);
 
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
   if (error) {
     return (
       <ThemedView style={styles.centered}>
-        <ThemedText type="subtitle">Couldn’t read this snap</ThemedText>
+        <ThemedText type="title">Hmm</ThemedText>
         <ThemedText themeColor="textSecondary">{error}</ThemedText>
+        <Pressable onPress={close} accessibilityRole="button">
+          <ThemedText themeColor="accent">Close</ThemedText>
+        </Pressable>
       </ThemedView>
     );
   }
 
-  if (!item) {
+  if (analyzing || !item) {
     return (
-      <ThemedView style={styles.centered}>
-        <ActivityIndicator color={theme.accent} />
-        <ThemedText themeColor="textSecondary">Reading facial signals…</ThemedText>
+      <ThemedView style={styles.screen}>
+        <SafeAreaView style={styles.safe}>
+          <ThemedText type="footnote" themeColor="textSecondary">
+            Reading the face
+          </ThemedText>
+          <PhotoHero uri={preview.uri} imageKey={preview.key || 'demo://pending'} size="large" />
+          <ThemedText type="title">A moment.</ThemedText>
+        </SafeAreaView>
       </ThemedView>
     );
   }
 
   const result = item.result;
-  const isDemoImage = item.imageKey.startsWith('demo://');
+  const current = PAGES[page];
 
   return (
     <ThemedView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <PhotoBlock uri={item.imageUri} demoKey={item.imageKey} speciesLabel={result.speciesLabel} />
-
-        {result.isFallbackSpecies ? (
-          <Card style={{ backgroundColor: theme.backgroundSelected }}>
-            <ThemedText type="smallBold">Graceful fallback</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              This snap is scored with shared mammalian grimace features. Treat it as a rough
-              signal, not a cat- or dog-scale reading.
-            </ThemedText>
-          </Card>
-        ) : null}
-
-        <Card>
-          <ThemedText type="eyebrow" themeColor="accent">
-            Optional playful layer
-          </ThemedText>
-          <ThemedText type="subtitle">{result.mood.label}</ThemedText>
-          <ThemedText themeColor="textSecondary">{result.mood.detail}</ThemedText>
-        </Card>
-
-        <Card>
-          <ThemedText type="eyebrow">Science panel · comfort / pain cues</ThemedText>
-          <ThemedText type="subtitle">
-            Signals consistent with a {result.comfort.level} pattern
-          </ThemedText>
-          <ComfortMeter level={result.comfort.level} index={result.comfort.index} />
-          <ThemedText>{result.comfort.summary}</ThemedText>
-          {result.comfort.grimaceTotal != null ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              Combined feature total {result.comfort.grimaceTotal.toFixed(1)} /{' '}
-              {result.comfort.grimaceMax} (each unit 0–2, grimace-scale style).
-            </ThemedText>
-          ) : null}
-        </Card>
-
-        {result.vetSuggestion ? (
-          <Card style={{ borderColor: Palette.danger, backgroundColor: Palette.dangerSoft }}>
-            <ThemedText type="smallBold" style={{ color: Palette.danger }}>
-              Consider a professional check
-            </ThemedText>
-            <ThemedText type="small" style={{ color: Palette.ink }}>
-              {result.vetSuggestion}
-            </ThemedText>
-          </Card>
-        ) : null}
-
-        <Card>
-          <ThemedText type="smallBold">Feature breakdown</ThemedText>
-          {result.features.map((feature) => (
-            <FeatureBar key={feature.id} feature={feature} />
-          ))}
-        </Card>
-
-        <Card>
-          <ThemedText type="smallBold">Confidence · {result.confidence.percent}%</ThemedText>
-          <View style={[styles.track, { backgroundColor: theme.backgroundSelected }]}>
-            <View
-              style={[
-                styles.fill,
-                {
-                  width: `${result.confidence.percent}%`,
-                  backgroundColor: theme.sage,
-                },
-              ]}
-            />
-          </View>
-          {result.confidence.reasons.map((reason) => (
-            <ThemedText key={reason} type="small" themeColor="textSecondary">
-              • {reason}
-            </ThemedText>
-          ))}
-          <ThemedText type="small" themeColor="textSecondary">
-            Mode: {result.analysisMode === 'cloud' ? 'cloud vision' : 'offline demo'}
-            {isDemoImage ? ' · bundled sample key' : ''}
-          </ThemedText>
-        </Card>
-
-        <Card>
-          <Pressable onPress={() => setShowCitations((value) => !value)} accessibilityRole="button">
-            <ThemedText type="smallBold">
-              Science citations {showCitations ? '▴' : '▾'}
+      <SafeAreaView style={[styles.safe, { width: pageWidth }]}>
+        <View style={styles.top}>
+          <Pressable onPress={close} accessibilityRole="button" hitSlop={12}>
+            <ThemedText type="body" themeColor="accent">
+              Close
             </ThemedText>
           </Pressable>
-          {showCitations
-            ? result.citations.map((citation) => (
-                <View key={citation.id} style={styles.citation}>
-                  <ThemedText type="smallBold">{citation.title}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {citation.authors} ({citation.year}). {citation.source}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {citation.notes}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="accent">
-                    {citation.url}
-                  </ThemedText>
-                </View>
-              ))
-            : (
-              <ThemedText type="small" themeColor="textSecondary">
-                Outputs are labeled as signals consistent with published scales — tap to read the
-                sources.
-              </ThemedText>
-            )}
-        </Card>
+          <ThemedText type="footnote" themeColor="textSecondary">
+            {page + 1} of {PAGES.length}
+          </ThemedText>
+          <View style={{ width: 48 }} />
+        </View>
 
-        <DisclaimerBanner />
-      </ScrollView>
+        <PhotoHero
+          uri={item.imageUri}
+          imageKey={item.imageKey}
+          species={result.speciesLabel}
+          size="large"
+        />
+
+        <View style={styles.body}>
+          <PageBody
+            page={current}
+            result={result}
+            onScience={() => router.push('/science')}
+            vetBackground={theme.backgroundSelected}
+          />
+        </View>
+
+        <View style={styles.footer}>
+          <View style={styles.dots}>
+            {PAGES.map((name, index) => (
+              <View
+                key={name}
+                style={[
+                  styles.dot,
+                  { backgroundColor: index === page ? theme.text : theme.line },
+                ]}
+              />
+            ))}
+          </View>
+          <View style={styles.nav}>
+            {page > 0 ? (
+              <Pressable
+                onPress={() => setPage((value) => value - 1)}
+                accessibilityRole="button"
+                accessibilityLabel="Back">
+                <ThemedText type="body" themeColor="accent">
+                  Back
+                </ThemedText>
+              </Pressable>
+            ) : (
+              <View />
+            )}
+            <Pressable
+              onPress={() => {
+                if (page < PAGES.length - 1) setPage((value) => value + 1);
+                else close();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={page < PAGES.length - 1 ? 'Next' : 'Done'}
+              style={[styles.next, { backgroundColor: theme.accent }]}>
+              <ThemedText type="smallBold" style={{ color: Palette.white, fontSize: 17 }}>
+                {page < PAGES.length - 1 ? 'Next' : 'Done'}
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
     </ThemedView>
   );
 }
 
-function PhotoBlock({
-  uri,
-  demoKey,
-  speciesLabel,
+function PageBody({
+  page,
+  result,
+  onScience,
+  vetBackground,
 }: {
-  uri: string;
-  demoKey: string;
-  speciesLabel: string;
+  page: (typeof PAGES)[number];
+  result: AnalysisResult;
+  onScience: () => void;
+  vetBackground: string;
 }) {
-  const theme = useTheme();
-  if (uri) {
+  if (page === 'species') {
     return (
-      <Image
-        source={{ uri }}
-        style={styles.photo}
-        contentFit="cover"
-        accessibilityLabel={`${speciesLabel} snap`}
-      />
+      <View style={styles.copy}>
+        <ThemedText type="eyebrow" themeColor="textSecondary">
+          Species
+        </ThemedText>
+        <ThemedText type="largeTitle">
+          {result.isFallbackSpecies ? 'Not sure' : `A ${result.speciesLabel.toLowerCase()}`}
+        </ThemedText>
+        <ThemedText themeColor="textSecondary">
+          {Math.round(result.speciesConfidence * 100)}% confident · estimated from the photo
+        </ThemedText>
+      </View>
     );
   }
-
-  const glyph = speciesLabel.startsWith('Dog') ? '🐶' : speciesLabel.startsWith('Cat') ? '🐱' : '🐾';
-
+  if (page === 'vibe') {
+    return (
+      <View style={styles.copy}>
+        <ThemedText type="eyebrow" themeColor="textSecondary">
+          Vibe
+        </ThemedText>
+        <ThemedText type="largeTitle">{result.mood.label}</ThemedText>
+        <ThemedText themeColor="textSecondary">{result.mood.detail}</ThemedText>
+      </View>
+    );
+  }
+  if (page === 'signals') {
+    return (
+      <View style={styles.copy}>
+        <ThemedText type="eyebrow" themeColor="textSecondary">
+          Signals
+        </ThemedText>
+        <ThemedText type="title">Estimated</ThemedText>
+        <View style={styles.signals}>
+          {result.signals.map((signal) => (
+            <SignalRow key={signal.id} signal={signal} />
+          ))}
+        </View>
+        <ThemedText type="caption" themeColor="textSecondary">
+          Facial-cue estimates — not a heart-rate sensor.
+        </ThemedText>
+      </View>
+    );
+  }
   return (
-    <View style={[styles.photo, styles.demoPhoto, { backgroundColor: theme.backgroundSelected }]}>
-      <ThemedText type="hero">{glyph}</ThemedText>
-      <ThemedText type="subtitle">{speciesLabel} sample</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {demoKey}
+    <View style={styles.copy}>
+      <ThemedText type="eyebrow" themeColor="textSecondary">
+        A guess
       </ThemedText>
+      <ThemedText type="title">“{result.caption}”</ThemedText>
+      <ThemedText type="footnote" themeColor="textSecondary">
+        Playful caption. Not science. Not a diagnosis.
+      </ThemedText>
+      {result.vetSuggestion ? (
+        <View style={[styles.vet, { backgroundColor: vetBackground }]}>
+          <ThemedText type="footnote">{result.vetSuggestion}</ThemedText>
+        </View>
+      ) : null}
+      <Pressable
+        onPress={onScience}
+        accessibilityRole="button"
+        accessibilityLabel="About the science"
+        style={styles.scienceLink}>
+        <ThemedText type="body" themeColor="accent">
+          About the science
+        </ThemedText>
+      </Pressable>
     </View>
   );
 }
@@ -242,13 +284,14 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  content: {
-    padding: Spacing.four,
-    gap: Spacing.four,
-    paddingBottom: Spacing.six,
+  safe: {
+    flex: 1,
+    alignSelf: 'center',
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
+    gap: Spacing.three,
   },
   centered: {
     flex: 1,
@@ -257,26 +300,55 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     padding: Spacing.four,
   },
-  photo: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: Radius.lg,
+  top: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  demoPhoto: {
+  body: {
+    flex: 1,
+  },
+  copy: {
+    gap: 10,
+  },
+  signals: {
+    gap: Spacing.three,
+    marginTop: Spacing.two,
+  },
+  vet: {
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+  },
+  scienceLink: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  footer: {
+    gap: Spacing.three,
+    paddingBottom: Spacing.two,
+  },
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  nav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 52,
+  },
+  next: {
+    minWidth: 108,
+    minHeight: 48,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-  },
-  track: {
-    height: 8,
-    borderRadius: Radius.pill,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: 8,
-    borderRadius: Radius.pill,
-  },
-  citation: {
-    gap: 4,
+    paddingHorizontal: 22,
   },
 });

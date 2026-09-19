@@ -21,18 +21,19 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShadowVisible: false,
-          headerTintColor: theme.text,
+          headerTintColor: theme.accent,
           headerStyle: { backgroundColor: theme.background },
-          headerTitleStyle: { fontWeight: '700' },
+          headerTitleStyle: { fontWeight: '600', color: theme.text },
           contentStyle: { backgroundColor: theme.background },
         }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal', headerShown: false }} />
+        <Stack.Screen name="result" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen
-          name="result"
+          name="science"
           options={{
-            title: 'Signals',
-            headerBackTitle: 'Back',
+            presentation: 'modal',
+            title: 'About the science',
           }}
         />
       </Stack>

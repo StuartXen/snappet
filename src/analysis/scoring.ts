@@ -5,22 +5,25 @@ import {
   featureDefinition,
   speciesLabel,
 } from './features';
+import type { SpeciesGuess } from './types';
 import type {
   AnalysisMode,
   AnalysisResult,
+  BiometricSignal,
   ComfortLevel,
   ComfortReading,
   ConfidenceReading,
+  FeatureId,
   FeatureObservation,
   FeatureScore,
+  MoodId,
   MoodSummary,
+  SignalId,
   Species,
 } from './types';
 
 export const COMFORT_MEDIUM_THRESHOLD = 0.34;
 export const COMFORT_HIGH_THRESHOLD = 0.67;
-
-/** Published FGS discussion often treats ~4/10 as a clinically interesting cutoff. */
 export const FGS_CLINICAL_DISCUSSION_CUTOFF = 4;
 
 export function clamp(value: number, min: number, max: number): number {
@@ -67,6 +70,63 @@ export function grimaceTotal(observations: FeatureObservation[], species: Specie
   return present.reduce((sum, item) => sum + clampFeatureScore(item.rawScore), 0);
 }
 
+function featureNorm(observations: FeatureObservation[], id: FeatureId): number {
+  const observation = observations.find((item) => item.id === id);
+  return clampFeatureScore(observation?.rawScore ?? 0) / 2;
+}
+
+export function estimateSignals(
+  observations: FeatureObservation[],
+  discomfortIndex: number,
+): BiometricSignal[] {
+  const ears = featureNorm(observations, 'earPosition');
+  const orbital = featureNorm(observations, 'orbitalTightening');
+  const muzzle = featureNorm(observations, 'muzzleTension');
+  const tightness = clamp(orbital * 0.5 + muzzle * 0.35 + ears * 0.15, 0, 1);
+  const loaf = (1 - orbital) * (1 - ears) * (1 - muzzle) * (1 - discomfortIndex);
+
+  const comfort = clamp(1 - discomfortIndex, 0, 1);
+  const calm = clamp(1 - tightness, 0, 1);
+  const energy = clamp((1 - discomfortIndex) * 0.38 + (1 - loaf) * 0.42 - tightness * 0.28, 0, 1);
+  const social = clamp(1 - (discomfortIndex * 0.48 + ears * 0.3 + muzzle * 0.22), 0, 1);
+
+  const rows: { id: SignalId; label: string; value: number; cue: string }[] = [
+    {
+      id: 'comfort',
+      label: 'Comfort',
+      value: comfort,
+      cue: 'Inverse of grimace-scale tightness (ears, eyes, muzzle).',
+    },
+    {
+      id: 'calm',
+      label: 'Calm',
+      value: calm,
+      cue: 'Softer orbital area, muzzle, and ear carriage.',
+    },
+    {
+      id: 'energy',
+      label: 'Energy',
+      value: energy,
+      cue: 'Awake-but-soft face versus a loaf or a pain face.',
+    },
+    {
+      id: 'social',
+      label: 'Social ease',
+      value: social,
+      cue: 'Forward ears and a loose muzzle, without a high discomfort index.',
+    },
+  ];
+
+  return rows.map((row) => ({
+    ...row,
+    value: Math.round(row.value * 100) / 100,
+  }));
+}
+
+export function signalValue(signals: BiometricSignal[], id: SignalId): number {
+  return signals.find((item) => item.id === id)?.value ?? 0;
+}
+
 function comfortSummary(level: ComfortLevel, species: Species, grimaceTotalValue: number | null): string {
   const scaleName =
     species === 'cat'
@@ -88,35 +148,65 @@ function comfortSummary(level: ComfortLevel, species: Species, grimaceTotalValue
   return `Signals are consistent with a higher-discomfort pattern on ${scaleName}.${fgsNote}`;
 }
 
-export function interpretMood(index: number, species: Species): MoodSummary {
-  const pet = species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'pet';
+export function interpretMood(index: number, signals: BiometricSignal[]): MoodSummary {
+  const energy = signalValue(signals, 'energy');
+  const calm = signalValue(signals, 'calm');
 
   if (index >= COMFORT_HIGH_THRESHOLD) {
     return {
-      label: 'Looks withdrawn',
-      detail: `A playful read only: this ${pet} may want a quiet, low-demand corner. Not a diagnosis.`,
+      id: 'quiet',
+      label: 'Wants quiet',
+      detail: 'The face looks held in. A low-demand corner is the kindest read — not a diagnosis.',
       playful: true,
     };
   }
   if (index >= COMFORT_MEDIUM_THRESHOLD) {
     return {
-      label: 'Looks guarded',
-      detail: `A playful read only: this ${pet} may be a little watchful or not in a social mood.`,
+      id: 'guarded',
+      label: 'A little guarded',
+      detail: 'Some tightness is showing. They may want a slower hello.',
       playful: true,
     };
   }
-  if (index < 0.18) {
+  if (energy > calm + 0.08) {
     return {
-      label: 'Looks settled',
-      detail: `A playful read only: the face looks soft, which people often read as content. Still not mind-reading.`,
+      id: 'play',
+      label: 'Bright-eyed',
+      detail: 'Soft face, a bit of spark. They look ready for something small and fun.',
       playful: true,
     };
   }
   return {
-    label: 'Looks alert',
-    detail: `A playful read only: this ${pet} looks awake and engaged more than tightened.`,
+    id: 'ease',
+    label: 'Soft and settled',
+    detail: 'The face looks easy. Comfort cues are on the quiet, loaf-ish side.',
     playful: true,
   };
+}
+
+const CAPTIONS: Record<Species, Record<MoodId, string>> = {
+  cat: {
+    ease: 'Has already decided the couch is a nature preserve.',
+    play: 'Plotting a heist. The treat jar should be nervous.',
+    guarded: 'Considering your request. Please hold all sudden movements.',
+    quiet: 'Would like the lights lower and the plot quieter.',
+  },
+  dog: {
+    ease: 'Off-duty. Belly remains a limited-time offer.',
+    play: 'Has notes. They are all about the ball.',
+    guarded: 'Loyal, but currently buffering.',
+    quiet: 'Would like a quiet walk and zero surprises.',
+  },
+  other: {
+    ease: 'Doing a flawless impression of a tiny woodland prince.',
+    play: 'Has ideas. Most of them involve snacks.',
+    guarded: 'Politely declined the group chat.',
+    quiet: 'Requesting a dim room and excellent manners.',
+  },
+};
+
+export function funnyCaption(species: Species, moodId: MoodId): string {
+  return CAPTIONS[species][moodId];
 }
 
 export function scoreFeatures(observations: FeatureObservation[], species: Species): FeatureScore[] {
@@ -139,6 +229,7 @@ export function scoreFeatures(observations: FeatureObservation[], species: Speci
 
 export function confidenceFor(input: {
   species: Species;
+  speciesConfidence: number;
   analysisMode: AnalysisMode;
   observations: FeatureObservation[];
   index: number;
@@ -159,8 +250,8 @@ export function confidenceFor(input: {
   }
 
   overall *= 0.7 + 0.3 * coverage;
+  overall *= 0.82 + 0.18 * clamp(input.speciesConfidence, 0, 1);
 
-  // Extreme scores from a single still photo are inherently less certain.
   if (input.index >= COMFORT_HIGH_THRESHOLD || input.index <= 0.12) {
     overall -= 0.04;
   }
@@ -189,37 +280,46 @@ export function confidenceFor(input: {
 
 export function buildAnalysisResult(input: {
   imageKey: string;
-  species: Species;
+  guess: SpeciesGuess;
   observations: FeatureObservation[];
   analysisMode: AnalysisMode;
 }): AnalysisResult {
-  const features = scoreFeatures(input.observations, input.species);
-  const index = weightedDiscomfortIndex(input.observations, input.species);
+  const species = input.guess.species;
+  const features = scoreFeatures(input.observations, species);
+  const index = weightedDiscomfortIndex(input.observations, species);
   const level = comfortLevelFromIndex(index);
-  const total = grimaceTotal(input.observations, input.species);
-  const grimaceMax = FEATURE_IDS_BY_SPECIES[input.species].length * 2;
+  const total = grimaceTotal(input.observations, species);
+  const grimaceMax = FEATURE_IDS_BY_SPECIES[species].length * 2;
+  const signals = estimateSignals(input.observations, index);
+  const mood = interpretMood(index, signals);
   const comfort: ComfortReading = {
     level,
     index,
     grimaceTotal: total,
     grimaceMax,
-    summary: comfortSummary(level, input.species, total),
+    summary: comfortSummary(level, species, total),
   };
 
   return {
-    species: input.species,
-    speciesLabel: speciesLabel(input.species),
-    isFallbackSpecies: input.species === 'other',
-    mood: interpretMood(index, input.species),
+    species,
+    speciesLabel: speciesLabel(species),
+    speciesConfidence: input.guess.confidence,
+    speciesEvidence: input.guess.evidence,
+    speciesSource: input.guess.source,
+    isFallbackSpecies: species === 'other',
+    mood,
+    caption: funnyCaption(species, mood.id),
+    signals,
     comfort,
     features,
     confidence: confidenceFor({
-      species: input.species,
+      species,
+      speciesConfidence: input.guess.confidence,
       analysisMode: input.analysisMode,
       observations: input.observations,
       index,
     }),
-    citations: citationsForSpecies(input.species),
+    citations: citationsForSpecies(species),
     disclaimer: DISCLAIMER,
     vetSuggestion: level === 'high' ? HIGH_PAIN_VET_SUGGESTION : null,
     analysisMode: input.analysisMode,

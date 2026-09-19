@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { AnalysisResult, Species } from '@/analysis/types';
 
-const STORAGE_KEY = 'snappet.history.v1';
+const STORAGE_KEY = 'snappet.history.v2';
 const MAX_ITEMS = 50;
 
 export interface HistoryItem {

@@ -1,33 +1,27 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { SAMPLE_SNAPS, isCloudVisionConfigured } from '@/analysis';
-import type { Species } from '@/analysis/types';
-import { Card } from '@/components/card';
-import { DisclaimerBanner } from '@/components/disclaimer-banner';
-import { PrimaryButton } from '@/components/primary-button';
-import { SpeciesPicker } from '@/components/species-picker';
+import { SAMPLE_SNAPS } from '@/analysis';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { setPendingSnap } from '@/storage/session';
 
 export default function SnapScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const [species, setSpecies] = useState<Species>('cat');
   const [busy, setBusy] = useState(false);
 
-  const openResult = useCallback(
-    (imageUri: string, imageKey: string, nextSpecies: Species = species) => {
-      setPendingSnap({ imageUri, imageKey, species: nextSpecies });
+  const openPending = useCallback(
+    (imageUri: string, imageKey: string) => {
+      setPendingSnap({ imageUri, imageKey });
       router.push('/result');
     },
-    [router, species],
+    [router],
   );
 
   const pickFromLibrary = useCallback(async () => {
@@ -35,10 +29,7 @@ export default function SnapScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert(
-          'Photo access needed',
-          'Snappet reads a still photo. Allow library access, or try a sample snap instead.',
-        );
+        Alert.alert('Photos', 'Allow library access, or try a sample below.');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({
@@ -49,83 +40,71 @@ export default function SnapScreen() {
       });
       if (picked.canceled || !picked.assets[0]) return;
       const uri = picked.assets[0].uri;
-      openResult(uri, uri);
+      openPending(uri, uri);
     } finally {
       setBusy(false);
     }
-  }, [openResult]);
+  }, [openPending]);
 
   return (
     <ThemedView style={styles.screen}>
-      <SafeAreaView edges={['left', 'right']} style={styles.safe}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}>
-          <View style={styles.hero}>
-            <ThemedText type="eyebrow" themeColor="accent">
-              Snap a pet, read the signals
-            </ThemedText>
-            <ThemedText type="hero">Snappet</ThemedText>
-            <ThemedText themeColor="textSecondary">
-              Point the camera at a cat or dog. We map facial cues to published grimace-scale
-              science — not mystical mind-reading.
-            </ThemedText>
-          </View>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+        <ThemedText type="largeTitle">Snappet</ThemedText>
+        <ThemedText type="footnote" themeColor="textSecondary" style={styles.tag}>
+          Snap a pet, read the signals
+        </ThemedText>
 
-          <Card>
-            <ThemedText type="smallBold">Who are we looking at?</ThemedText>
-            <SpeciesPicker value={species} onChange={setSpecies} />
-            {species === 'other' ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Other animals get a shared-mammal fallback with lower confidence. Cat and dog
-                scales are the ones we trust most.
-              </ThemedText>
-            ) : null}
-          </Card>
-
-          <View style={styles.actions}>
-            <PrimaryButton
-              label="Take a photo"
-              onPress={() => router.push({ pathname: '/camera', params: { species } })}
-            />
-            <PrimaryButton
-              label="Choose from library"
-              variant="outline"
-              loading={busy}
-              onPress={pickFromLibrary}
-            />
-          </View>
-
-          <Card>
-            <ThemedText type="smallBold">Try a sample (offline demo)</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              Always works without a camera or network. Same sample, same scores.
-            </ThemedText>
-            <View style={styles.samples}>
-              {SAMPLE_SNAPS.map((sample) => (
-                <Pressable
-                  key={sample.imageKey}
-                  onPress={() => openResult('', sample.imageKey, sample.species)}
-                  style={[styles.sample, { borderColor: theme.line, backgroundColor: theme.background }]}>
-                  <ThemedText type="smallBold">{sample.title}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {sample.blurb}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-          </Card>
-
-          <ThemedText type="small" themeColor="textSecondary">
-            Analysis mode:{' '}
-            {isCloudVisionConfigured()
-              ? 'optional cloud vision is configured; demo mode is the fallback.'
-              : 'offline deterministic demo (no cloud key set).'}
-            {Platform.OS === 'web' ? ' Camera works best on a phone with Expo Go.' : ''}
+        <View style={[styles.well, { backgroundColor: theme.backgroundSelected }]}>
+          <ThemedText style={styles.paw}>🐾</ThemedText>
+          <ThemedText type="footnote" themeColor="textSecondary">
+            We’ll guess cat, dog, or other from the photo.
           </ThemedText>
+        </View>
 
-          <DisclaimerBanner compact />
-        </ScrollView>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Take a photo"
+          onPress={() => router.push('/camera')}
+          style={({ pressed }) => [
+            styles.shutter,
+            { borderColor: theme.accent, opacity: pressed ? 0.75 : 1 },
+          ]}
+        />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Choose from library"
+          onPress={pickFromLibrary}
+          disabled={busy}
+          style={styles.library}>
+          <ThemedText type="body" themeColor="accent">
+            Photo Library
+          </ThemedText>
+        </Pressable>
+
+        <View style={styles.samples}>
+          {SAMPLE_SNAPS.map((sample) => (
+            <Pressable
+              key={sample.imageKey}
+              accessibilityRole="button"
+              accessibilityLabel={sample.imageKey.includes('relaxed')
+                ? 'Relaxed cat'
+                : sample.imageKey.includes('uncomfortable')
+                  ? 'Uncomfortable cat'
+                  : sample.imageKey.includes('alert')
+                    ? 'Alert dog'
+                    : 'Discomfort-cue dog'}
+              onPress={() => openPending('', sample.imageKey)}
+              style={styles.sample}>
+              <View style={[styles.thumb, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText style={{ fontSize: 28 }}>{sample.glyph}</ThemedText>
+              </View>
+              <ThemedText type="caption" themeColor="textSecondary">
+                {sample.title}
+              </ThemedText>
+            </Pressable>
+          ))}
+        </View>
       </SafeAreaView>
     </ThemedView>
   );
@@ -140,26 +119,55 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: MaxContentWidth,
-  },
-  content: {
-    padding: Spacing.four,
-    gap: Spacing.four,
-    paddingBottom: Spacing.six,
-  },
-  hero: {
-    gap: Spacing.two,
+    paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
+    alignItems: 'center',
   },
-  actions: {
+  tag: {
+    marginTop: 4,
+    marginBottom: Spacing.four,
+  },
+  well: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: Radius.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.two,
+    padding: Spacing.four,
+  },
+  paw: {
+    fontSize: 72,
+  },
+  shutter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 5,
+    marginTop: Spacing.four,
+    marginBottom: Spacing.three,
+  },
+  library: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   samples: {
-    gap: Spacing.two,
+    marginTop: 'auto',
+    marginBottom: Spacing.three,
+    flexDirection: 'row',
+    gap: Spacing.three,
   },
   sample: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: Spacing.three,
-    gap: 2,
+    alignItems: 'center',
+    gap: 6,
+    width: 64,
+  },
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

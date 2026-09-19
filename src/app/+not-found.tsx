@@ -12,7 +12,7 @@ export default function NotFoundScreen() {
       <ThemedView style={styles.wrap}>
         <ThemedText type="subtitle">This screen doesn’t exist.</ThemedText>
         <Link href="/">
-          <ThemedText type="link" themeColor="accent">
+          <ThemedText type="body" themeColor="accent">
             Back to Snap
           </ThemedText>
         </Link>

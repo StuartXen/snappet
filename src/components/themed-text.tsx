@@ -1,28 +1,44 @@
-import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
+import { StyleSheet, Text, type TextProps } from 'react-native';
 
 import { Fonts, type ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type ThemedTextProps = TextProps & {
-  type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'eyebrow' | 'hero';
+  type?:
+    | 'default'
+    | 'largeTitle'
+    | 'title'
+    | 'title2'
+    | 'body'
+    | 'footnote'
+    | 'caption'
+    | 'small'
+    | 'smallBold'
+    | 'subtitle'
+    | 'hero'
+    | 'eyebrow';
   themeColor?: ThemeColor;
 };
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  const resolved = type === 'default' || type === 'body' ? 'body' : type;
 
   return (
     <Text
       style={[
-        { color: theme[themeColor ?? 'text'] },
-        type === 'default' && styles.default,
-        type === 'title' && styles.title,
-        type === 'hero' && styles.hero,
-        type === 'small' && styles.small,
-        type === 'smallBold' && styles.smallBold,
-        type === 'subtitle' && styles.subtitle,
-        type === 'link' && styles.link,
-        type === 'eyebrow' && styles.eyebrow,
+        { color: theme[themeColor ?? 'text'], fontFamily: Fonts.rounded },
+        resolved === 'largeTitle' && styles.largeTitle,
+        resolved === 'hero' && styles.largeTitle,
+        resolved === 'title' && styles.title,
+        resolved === 'title2' && styles.title2,
+        resolved === 'subtitle' && styles.title2,
+        resolved === 'body' && styles.body,
+        resolved === 'footnote' && styles.footnote,
+        resolved === 'small' && styles.footnote,
+        resolved === 'caption' && styles.caption,
+        resolved === 'smallBold' && styles.footnoteBold,
+        resolved === 'eyebrow' && styles.eyebrow,
         style,
       ]}
       {...rest}
@@ -31,49 +47,49 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 }
 
 const styles = StyleSheet.create({
-  small: {
+  largeTitle: {
+    fontSize: 34,
+    lineHeight: 41,
+    fontWeight: '700',
+    letterSpacing: 0.37,
+  },
+  title: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
+    letterSpacing: 0.36,
+  },
+  title2: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '600',
+    letterSpacing: 0.35,
+  },
+  body: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '400',
+  },
+  footnote: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: 500,
+    fontWeight: '400',
   },
-  smallBold: {
+  footnoteBold: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: 700,
+    fontWeight: '600',
   },
-  default: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: 500,
+  caption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '400',
   },
   eyebrow: {
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: 700,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: 700,
-    lineHeight: 40,
-    fontFamily: Fonts.rounded,
-  },
-  hero: {
-    fontSize: 42,
-    fontWeight: 700,
-    lineHeight: 46,
-    fontFamily: Fonts.rounded,
-  },
-  subtitle: {
-    fontSize: 22,
-    lineHeight: 28,
     fontWeight: '600',
-    fontFamily: Fonts.rounded,
-  },
-  link: {
-    lineHeight: 22,
-    fontSize: 15,
-    fontWeight: 600,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });

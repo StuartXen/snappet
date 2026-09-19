@@ -1,4 +1,5 @@
-import type { CloudVisionResponse, FeatureObservation, Species } from './types';
+import { clamp } from './scoring';
+import type { CloudVisionParse, CloudVisionResponse, FeatureObservation, Species } from './types';
 
 export function visionEndpoint(): string | undefined {
   const value = process.env.EXPO_PUBLIC_VISION_ENDPOINT?.trim();
@@ -20,24 +21,36 @@ function isFeatureObservation(value: unknown): value is FeatureObservation {
   );
 }
 
-export function parseCloudVisionResponse(payload: unknown): FeatureObservation[] | null {
+function parseSpecies(value: unknown): Species | undefined {
+  if (value === 'cat' || value === 'dog' || value === 'other') return value;
+  return undefined;
+}
+
+export function parseCloudVisionResponse(payload: unknown): CloudVisionParse | null {
   if (typeof payload !== 'object' || payload == null) return null;
   const record = payload as CloudVisionResponse;
   if (!Array.isArray(record.features) || record.features.length === 0) return null;
   const features = record.features.filter(isFeatureObservation);
-  return features.length > 0 ? features : null;
+  if (features.length === 0) return null;
+
+  const parsed: CloudVisionParse = { features };
+  const species = parseSpecies(record.species);
+  if (species) parsed.species = species;
+  if (typeof record.speciesConfidence === 'number' && Number.isFinite(record.speciesConfidence)) {
+    parsed.speciesConfidence = clamp(record.speciesConfidence, 0, 1);
+  }
+  return parsed;
 }
 
 /**
  * Optional structured-vision hook. Never throws to the UI — callers fall back to demo mode.
- * Expected POST JSON: { imageKey, species }
- * Expected response JSON: { features: [{ id, rawScore, evidence }] }
+ * POST JSON: { imageKey, imageUri? }
+ * Response JSON: { features: [...], species?: "cat"|"dog"|"other", speciesConfidence?: number }
  */
 export async function extractCloudObservations(input: {
   imageKey: string;
-  species: Species;
   imageUri?: string;
-}): Promise<FeatureObservation[] | null> {
+}): Promise<CloudVisionParse | null> {
   const endpoint = visionEndpoint();
   if (!endpoint) return null;
 
@@ -47,7 +60,6 @@ export async function extractCloudObservations(input: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         imageKey: input.imageKey,
-        species: input.species,
         imageUri: input.imageUri,
       }),
     });

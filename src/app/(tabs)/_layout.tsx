@@ -5,7 +5,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 function TabIcon({ glyph, focused }: { glyph: string; focused: boolean }) {
   return (
-    <Text style={{ fontSize: 18, opacity: focused ? 1 : 0.55 }} accessibilityElementsHidden>
+    <Text style={{ fontSize: 17, opacity: focused ? 1 : 0.45 }} accessibilityElementsHidden>
       {glyph}
     </Text>
   );
@@ -21,11 +21,11 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: theme.background },
         headerTitleStyle: { fontWeight: '700', color: theme.text },
         headerTintColor: theme.text,
-        tabBarActiveTintColor: theme.accent,
+        tabBarActiveTintColor: theme.text,
         tabBarInactiveTintColor: theme.textSecondary,
         tabBarActiveBackgroundColor: 'transparent',
         tabBarStyle: {
-          backgroundColor: theme.backgroundElement,
+          backgroundColor: theme.background,
           borderTopColor: theme.line,
         },
         sceneStyle: { backgroundColor: theme.background },
@@ -34,21 +34,15 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Snap',
+          headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon glyph="📷" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          title: 'History',
-          tabBarIcon: ({ focused }) => <TabIcon glyph="🐾" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="science"
-        options={{
-          title: 'Science',
-          tabBarIcon: ({ focused }) => <TabIcon glyph="📚" focused={focused} />,
+          title: 'Recents',
+          tabBarIcon: ({ focused }) => <TabIcon glyph="🕐" focused={focused} />,
         }}
       />
     </Tabs>

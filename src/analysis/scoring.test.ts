@@ -9,11 +9,14 @@ import {
   COMFORT_HIGH_THRESHOLD,
   clampFeatureScore,
   comfortLevelFromIndex,
+  estimateSignals,
   grimaceTotal,
   interpretMood,
   scoreFeatures,
+  signalValue,
   weightedDiscomfortIndex,
 } from './scoring';
+import { detectSpecies } from './species';
 import type { FeatureObservation } from './types';
 
 function obs(id: FeatureObservation['id'], rawScore: number): FeatureObservation {
@@ -124,15 +127,6 @@ describe('grimace scoring heuristics', () => {
     assert.ok(result.features.every((feature) => OTHER_FEATURE_IDS.includes(feature.id)));
   });
 
-  it('labels mood as a playful layer and keeps it separate from comfort', () => {
-    const settled = interpretMood(0.1, 'cat');
-    const withdrawn = interpretMood(0.8, 'dog');
-    assert.equal(settled.playful, true);
-    assert.equal(settled.label, 'Looks settled');
-    assert.equal(withdrawn.label, 'Looks withdrawn');
-    assert.match(withdrawn.detail, /not a diagnosis/i);
-  });
-
   it('lowers confidence for demo mode and unknown species versus scored cats', () => {
     const cat = analyzePetSync({
       imageKey: 'test://a',
@@ -170,6 +164,64 @@ describe('grimace scoring heuristics', () => {
   });
 });
 
+describe('auto species detection', () => {
+  it('reads cat and dog tokens from the photo key', () => {
+    assert.equal(detectSpecies('demo://cat-relaxed').species, 'cat');
+    assert.equal(detectSpecies('file://photos/milo-the-puppy.jpg').species, 'dog');
+    assert.equal(detectSpecies('album/bunny-unknown.png').species, 'other');
+    assert.ok(detectSpecies('demo://cat-relaxed').confidence >= 0.8);
+  });
+
+  it('is deterministic when the key has no species token', () => {
+    assert.deepEqual(detectSpecies('file://photos/milo.jpg'), detectSpecies('file://photos/milo.jpg'));
+  });
+
+  it('lets analyzePetSync detect species when none is passed', () => {
+    const cat = analyzePetSync({ imageKey: 'demo://cat-relaxed' });
+    const dog = analyzePetSync({ imageKey: 'demo://dog-pain' });
+    const other = analyzePetSync({ imageKey: 'demo://rabbit-unknown' });
+    assert.equal(cat.species, 'cat');
+    assert.equal(dog.species, 'dog');
+    assert.equal(other.species, 'other');
+    assert.equal(cat.speciesSource, 'heuristic');
+    assert.ok(cat.speciesConfidence > 0.7);
+  });
+});
+
+describe('emotion signals and caption', () => {
+  it('maps a soft face to high comfort/calm and a tight face to low', () => {
+    const soft = estimateSignals(relaxedCat, weightedDiscomfortIndex(relaxedCat, 'cat'));
+    const tight = estimateSignals(painfulCat, weightedDiscomfortIndex(painfulCat, 'cat'));
+    assert.ok(signalValue(soft, 'comfort') > 0.75);
+    assert.ok(signalValue(soft, 'calm') > 0.7);
+    assert.ok(signalValue(tight, 'comfort') < 0.35);
+    assert.ok(signalValue(soft, 'comfort') > signalValue(tight, 'comfort'));
+    assert.ok(signalValue(soft, 'social') > signalValue(tight, 'social'));
+  });
+
+  it('labels vibe as a playful layer and picks a quiet mood for high discomfort', () => {
+    const settled = interpretMood(0.1, estimateSignals(relaxedCat, 0.1));
+    const withdrawn = interpretMood(0.8, estimateSignals(painfulCat, 0.8));
+    assert.equal(settled.playful, true);
+    assert.equal(settled.id, 'ease');
+    assert.equal(settled.label, 'Soft and settled');
+    assert.equal(withdrawn.id, 'quiet');
+    assert.equal(withdrawn.label, 'Wants quiet');
+    assert.match(withdrawn.detail, /not a diagnosis/i);
+  });
+
+  it('adds a short witty caption that stays separate from the disclaimer', () => {
+    const relaxed = analyzePetSync({ imageKey: 'demo://cat-relaxed' });
+    const painful = analyzePetSync({ imageKey: 'demo://cat-uncomfortable' });
+    assert.ok(relaxed.caption.length > 8);
+    assert.ok(relaxed.caption.length < 90);
+    assert.notEqual(relaxed.caption, relaxed.disclaimer);
+    assert.notEqual(relaxed.caption, painful.caption);
+    assert.doesNotMatch(relaxed.caption, /stupid|ugly|hate|dumb/i);
+    assert.equal(relaxed.signals.length, 4);
+  });
+});
+
 describe('offline demo extractor', () => {
   it('is deterministic for the same image key and species', () => {
     const first = extractDemoObservations('file://photos/milo.jpg', 'cat');
@@ -185,9 +237,9 @@ describe('offline demo extractor', () => {
   });
 
   it('honors relaxed and pain tokens so samples stay predictable', () => {
-    const relaxed = analyzePetSync({ imageKey: 'demo://cat-relaxed', species: 'cat' });
-    const painful = analyzePetSync({ imageKey: 'demo://cat-uncomfortable', species: 'cat' });
-    const dogPain = analyzePetSync({ imageKey: 'demo://dog-pain', species: 'dog' });
+    const relaxed = analyzePetSync({ imageKey: 'demo://cat-relaxed' });
+    const painful = analyzePetSync({ imageKey: 'demo://cat-uncomfortable' });
+    const dogPain = analyzePetSync({ imageKey: 'demo://dog-pain' });
     assert.equal(relaxed.comfort.level, 'low');
     assert.equal(painful.comfort.level, 'high');
     assert.equal(dogPain.comfort.level, 'high');
@@ -202,11 +254,15 @@ describe('offline demo extractor', () => {
 });
 
 describe('optional cloud vision parser', () => {
-  it('accepts a well-formed feature payload and rejects empty ones', () => {
+  it('accepts features plus an optional species guess', () => {
     const parsed = parseCloudVisionResponse({
       features: [{ id: 'earPosition', rawScore: 1, evidence: 'ears slightly rotated' }],
+      species: 'dog',
+      speciesConfidence: 0.77,
     });
-    assert.equal(parsed?.length, 1);
+    assert.equal(parsed?.features.length, 1);
+    assert.equal(parsed?.species, 'dog');
+    assert.equal(parsed?.speciesConfidence, 0.77);
     assert.equal(parseCloudVisionResponse({ features: [] }), null);
     assert.equal(parseCloudVisionResponse({}), null);
     assert.equal(parseCloudVisionResponse(null), null);

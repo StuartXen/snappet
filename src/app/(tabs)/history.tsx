@@ -2,18 +2,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Card } from '@/components/card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Palette, Radius, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { clearHistory, loadHistory, type HistoryItem } from '@/storage/history';
-
-function levelColor(level: HistoryItem['result']['comfort']['level']): string {
-  if (level === 'high') return Palette.danger;
-  if (level === 'medium') return Palette.warning;
-  return Palette.good;
-}
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -38,7 +31,7 @@ export default function HistoryScreen() {
   );
 
   const confirmClear = () => {
-    Alert.alert('Clear local history?', 'Snaps live only on this device.', [
+    Alert.alert('Clear Recents?', 'Snaps stay on this device.', [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Clear',
@@ -53,58 +46,45 @@ export default function HistoryScreen() {
   return (
     <ThemedView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ThemedText themeColor="textSecondary">
-          Recent snaps stay on this device. Nothing is uploaded unless you set a cloud vision
-          endpoint.
-        </ThemedText>
-
         {items.length === 0 ? (
-          <Card>
-            <ThemedText type="subtitle">No snaps yet</ThemedText>
+          <View style={styles.empty}>
+            <ThemedText type="title">No snaps yet</ThemedText>
             <ThemedText themeColor="textSecondary">
-              Take a photo, pick one from the library, or run a sample on the Snap tab.
+              Take a photo. We’ll read the face from there.
             </ThemedText>
-          </Card>
+          </View>
         ) : (
-          items.map((item) => (
+          items.map((item, index) => (
             <Pressable
               key={item.id}
               onPress={() => router.push({ pathname: '/result', params: { id: item.id } })}
-              accessibilityRole="button">
-              <Card>
-                <View style={styles.row}>
-                  <View style={styles.meta}>
-                    <ThemedText type="smallBold">
-                      {item.result.speciesLabel} · {item.result.mood.label}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {formatWhen(item.createdAt)}
-                    </ThemedText>
-                  </View>
-                  <View
-                    style={[
-                      styles.pill,
-                      { backgroundColor: theme.backgroundSelected },
-                    ]}>
-                    <ThemedText
-                      type="smallBold"
-                      style={{ color: levelColor(item.result.comfort.level) }}>
-                      {item.result.comfort.level}
-                    </ThemedText>
-                  </View>
-                </View>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Confidence {item.result.confidence.percent}% · {item.result.analysisMode}
+              accessibilityRole="button"
+              style={[
+                styles.row,
+                {
+                  borderBottomColor: theme.line,
+                  borderBottomWidth: index === items.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                },
+              ]}>
+              <View style={styles.meta}>
+                <ThemedText type="body">
+                  {item.result.speciesLabel} · {item.result.mood.label}
                 </ThemedText>
-              </Card>
+                <ThemedText type="footnote" themeColor="textSecondary">
+                  {formatWhen(item.createdAt)}
+                </ThemedText>
+              </View>
+              <ThemedText type="footnote" themeColor="textSecondary">
+                {item.result.comfort.level === 'high' ? 'High cues' : '›'}
+              </ThemedText>
             </Pressable>
           ))
         )}
 
         {items.length > 0 ? (
           <Pressable onPress={confirmClear} accessibilityRole="button" style={styles.clear}>
-            <ThemedText type="smallBold" themeColor="accent">
-              Clear history
+            <ThemedText type="body" themeColor="accent">
+              Clear Recents
             </ThemedText>
           </Pressable>
         ) : null}
@@ -118,30 +98,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: Spacing.four,
-    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.six,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
+  empty: {
+    paddingTop: Spacing.six,
+    gap: Spacing.two,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 16,
     gap: Spacing.three,
   },
   meta: {
     flex: 1,
     gap: 2,
   },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: Radius.pill,
-  },
   clear: {
     alignItems: 'center',
-    padding: Spacing.three,
+    paddingVertical: Spacing.four,
   },
 });
