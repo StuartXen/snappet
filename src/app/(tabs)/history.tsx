@@ -48,7 +48,10 @@ export default function HistoryScreen() {
     <ThemedView style={styles.screen}>
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ThemedText type="largeTitle">Recents</ThemedText>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroller}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}>
           {items == null ? (
             <ThemedText type="footnote" themeColor="textSecondary" style={styles.pad}>
               Loading…
@@ -113,8 +116,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
   },
+  scroller: {
+    flex: 1,
+  },
   content: {
     paddingBottom: Spacing.six,
+    flexGrow: 1,
   },
   pad: {
     paddingTop: Spacing.four,

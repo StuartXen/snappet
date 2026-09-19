@@ -90,8 +90,7 @@ export default function ResultScreen() {
   }, [id]);
 
   const close = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
+    router.replace(id ? '/history' : '/');
   };
 
   if (error) {
